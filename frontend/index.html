@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cicd-go-demo</title>
+  </head>
+  <body>
+    <div id="app">
+      <h1>cicd-go-demo</h1>
+      <p>输入名字，前端会调用后端 <code>/api/v1/hello</code>，并显示版本信息（来自 CI 注入的 buildinfo）。</p>
+
+      <form id="form">
+        <label>
+          name:
+          <input id="name" value="world" />
+        </label>
+        <button type="submit">Call API</button>
+      </form>
+
+      <pre id="out">waiting...</pre>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
+

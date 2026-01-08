@@ -1,0 +1,134 @@
+name: deploy-production
+
+on:
+  push:
+    branches: ["main"]
+    tags: ["v*"]
+    paths:
+      - "backend/**"
+      - "deploy/**"
+      - ".github/workflows/deploy-production.yml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      APP_NAME: cicd-go-demo
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${GITHUB_REPOSITORY,,}-backend"
+          sha_tag="sha-${GITHUB_SHA}"
+          date="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          version="prod-${GITHUB_SHA::7}"
+
+          {
+            echo "image=${image}"
+            echo "deploy_ref=${image}:${sha_tag}"
+            echo "date=${date}"
+          } >> "$GITHUB_OUTPUT"
+
+          # tags: 永远带 sha-<sha>（不可变），main 额外推 latest，tag(v*) 额外推版本号
+          {
+            echo "tags<<EOF"
+            echo "${image}:${sha_tag}"
+            if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+              echo "${image}:${GITHUB_REF_NAME}"
+              version="${GITHUB_REF_NAME}"
+            elif [[ "${GITHUB_REF_NAME}" == "main" ]]; then
+              echo "${image}:latest"
+              version="main-${GITHUB_SHA::7}"
+            else
+              version="prod-${GITHUB_SHA::7}"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Build & push (Docker layer cache)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            COMMIT=${{ github.sha }}
+            DATE=${{ steps.meta.outputs.date }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Prepare SSH (key + known_hosts)
+        shell: bash
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_KNOWN_HOSTS: ${{ secrets.SERVER_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s' "$SERVER_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s' "$SERVER_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Upload deploy script
+        shell: bash
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SSH_PORT: ${{ secrets.SERVER_PORT }}
+        run: |
+          set -euo pipefail
+          SSH_PORT="${SSH_PORT:-22}"
+          ssh_opts="-i ~/.ssh/id_ed25519 -p ${SSH_PORT} -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts"
+          ssh ${ssh_opts} "${SERVER_USER}@${SERVER_HOST}" "mkdir -p ~/cicd-go-demo/deploy/scripts"
+          scp -i ~/.ssh/id_ed25519 -P "${SSH_PORT}" -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
+            deploy/scripts/bluegreen.sh "${SERVER_USER}@${SERVER_HOST}:~/cicd-go-demo/deploy/scripts/bluegreen.sh"
+          ssh ${ssh_opts} "${SERVER_USER}@${SERVER_HOST}" "chmod +x ~/cicd-go-demo/deploy/scripts/bluegreen.sh"
+
+      - name: Deploy (blue/green, zero-downtime)
+        shell: bash
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SSH_PORT: ${{ secrets.SERVER_PORT }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          IMAGE: ${{ steps.meta.outputs.deploy_ref }}
+        run: |
+          set -euo pipefail
+          SSH_PORT="${SSH_PORT:-22}"
+          ssh_opts="-i ~/.ssh/id_ed25519 -p ${SSH_PORT} -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts"
+          q() { printf "%q" "$1"; }
+          remote_cmd="GHCR_USERNAME=$(q "$GHCR_USERNAME") GHCR_TOKEN=$(q "$GHCR_TOKEN") IMAGE=$(q "$IMAGE") ACTION=deploy APP_NAME=$(q "$APP_NAME") ~/cicd-go-demo/deploy/scripts/bluegreen.sh"
+          ssh ${ssh_opts} "${SERVER_USER}@${SERVER_HOST}" "${remote_cmd}"
+

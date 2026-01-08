@@ -1,0 +1,127 @@
+name: rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "选择要回滚的环境"
+        type: choice
+        required: true
+        options:
+          - dev
+          - production
+
+permissions:
+  contents: read
+
+jobs:
+  rollback-dev:
+    if: ${{ inputs.target == 'dev' }}
+    runs-on: ubuntu-latest
+    environment: dev
+    env:
+      APP_NAME: cicd-go-demo
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare SSH (key + known_hosts)
+        shell: bash
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_KNOWN_HOSTS: ${{ secrets.SERVER_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s' "$SERVER_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s' "$SERVER_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Upload deploy script
+        shell: bash
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SSH_PORT: ${{ secrets.SERVER_PORT }}
+        run: |
+          set -euo pipefail
+          SSH_PORT="${SSH_PORT:-22}"
+          ssh_opts="-i ~/.ssh/id_ed25519 -p ${SSH_PORT} -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts"
+          ssh ${ssh_opts} "${SERVER_USER}@${SERVER_HOST}" "mkdir -p ~/cicd-go-demo/deploy/scripts"
+          scp -i ~/.ssh/id_ed25519 -P "${SSH_PORT}" -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
+            deploy/scripts/bluegreen.sh "${SERVER_USER}@${SERVER_HOST}:~/cicd-go-demo/deploy/scripts/bluegreen.sh"
+          ssh ${ssh_opts} "${SERVER_USER}@${SERVER_HOST}" "chmod +x ~/cicd-go-demo/deploy/scripts/bluegreen.sh"
+
+      - name: Rollback (blue/green)
+        shell: bash
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SSH_PORT: ${{ secrets.SERVER_PORT }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          set -euo pipefail
+          SSH_PORT="${SSH_PORT:-22}"
+          ssh_opts="-i ~/.ssh/id_ed25519 -p ${SSH_PORT} -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts"
+          q() { printf "%q" "$1"; }
+          remote_cmd="GHCR_USERNAME=$(q "$GHCR_USERNAME") GHCR_TOKEN=$(q "$GHCR_TOKEN") ACTION=rollback APP_NAME=$(q "$APP_NAME") ~/cicd-go-demo/deploy/scripts/bluegreen.sh"
+          ssh ${ssh_opts} "${SERVER_USER}@${SERVER_HOST}" "${remote_cmd}"
+
+  rollback-production:
+    if: ${{ inputs.target == 'production' }}
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      APP_NAME: cicd-go-demo
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare SSH (key + known_hosts)
+        shell: bash
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_KNOWN_HOSTS: ${{ secrets.SERVER_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s' "$SERVER_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s' "$SERVER_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Upload deploy script
+        shell: bash
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SSH_PORT: ${{ secrets.SERVER_PORT }}
+        run: |
+          set -euo pipefail
+          SSH_PORT="${SSH_PORT:-22}"
+          ssh_opts="-i ~/.ssh/id_ed25519 -p ${SSH_PORT} -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts"
+          ssh ${ssh_opts} "${SERVER_USER}@${SERVER_HOST}" "mkdir -p ~/cicd-go-demo/deploy/scripts"
+          scp -i ~/.ssh/id_ed25519 -P "${SSH_PORT}" -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
+            deploy/scripts/bluegreen.sh "${SERVER_USER}@${SERVER_HOST}:~/cicd-go-demo/deploy/scripts/bluegreen.sh"
+          ssh ${ssh_opts} "${SERVER_USER}@${SERVER_HOST}" "chmod +x ~/cicd-go-demo/deploy/scripts/bluegreen.sh"
+
+      - name: Rollback (blue/green)
+        shell: bash
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SSH_PORT: ${{ secrets.SERVER_PORT }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          set -euo pipefail
+          SSH_PORT="${SSH_PORT:-22}"
+          ssh_opts="-i ~/.ssh/id_ed25519 -p ${SSH_PORT} -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts"
+          q() { printf "%q" "$1"; }
+          remote_cmd="GHCR_USERNAME=$(q "$GHCR_USERNAME") GHCR_TOKEN=$(q "$GHCR_TOKEN") ACTION=rollback APP_NAME=$(q "$APP_NAME") ~/cicd-go-demo/deploy/scripts/bluegreen.sh"
+          ssh ${ssh_opts} "${SERVER_USER}@${SERVER_HOST}" "${remote_cmd}"
+

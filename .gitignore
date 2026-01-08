@@ -1,0 +1,12 @@
+.DS_Store
+.idea/
+.vscode/
+
+# Go
+backend/bin/
+backend/.cache/
+backend/.env
+
+# Logs
+*.log
+

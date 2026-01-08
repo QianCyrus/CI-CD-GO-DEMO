@@ -1,0 +1,12 @@
+.git
+.github
+.vscode
+.idea
+
+**/*_test.go
+**/*.md
+
+bin
+dist
+coverage
+
