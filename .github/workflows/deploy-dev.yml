@@ -19,8 +19,6 @@ permissions:
 
 jobs:
   deploy:
-    # 兜底：如果你还没在 Environment(dev) 里配置服务器 secrets，就先跳过部署（避免一上来就红）
-    if: ${{ secrets.SERVER_HOST != '' && secrets.SERVER_USER != '' && secrets.SERVER_SSH_KEY != '' && secrets.SERVER_KNOWN_HOSTS != '' }}
     runs-on: ubuntu-latest
     environment: dev
     env:
@@ -66,7 +64,36 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Gate deploy (skip if server secrets missing)
+        id: gate
+        shell: bash
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_KNOWN_HOSTS: ${{ secrets.SERVER_KNOWN_HOSTS }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          set -euo pipefail
+          missing=""
+          [[ -z "$SERVER_HOST" ]] && missing="$missing SERVER_HOST"
+          [[ -z "$SERVER_USER" ]] && missing="$missing SERVER_USER"
+          [[ -z "$SERVER_SSH_KEY" ]] && missing="$missing SERVER_SSH_KEY"
+          [[ -z "$SERVER_KNOWN_HOSTS" ]] && missing="$missing SERVER_KNOWN_HOSTS"
+          [[ -z "$GHCR_USERNAME" ]] && missing="$missing GHCR_USERNAME"
+          [[ -z "$GHCR_TOKEN" ]] && missing="$missing GHCR_TOKEN"
+
+          if [[ -n "$missing" ]]; then
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping SSH deploy (missing secrets:${missing})."
+          else
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Server secrets present, continue to SSH deploy."
+          fi
+
       - name: Prepare SSH (key + known_hosts)
+        if: ${{ steps.gate.outputs.deploy == 'true' }}
         shell: bash
         env:
           SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
@@ -81,6 +108,7 @@ jobs:
           chmod 600 ~/.ssh/known_hosts
 
       - name: Upload deploy script
+        if: ${{ steps.gate.outputs.deploy == 'true' }}
         shell: bash
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
@@ -96,6 +124,7 @@ jobs:
           ssh ${ssh_opts} "${SERVER_USER}@${SERVER_HOST}" "chmod +x ~/cicd-go-demo/deploy/scripts/bluegreen.sh"
 
       - name: Deploy (blue/green, zero-downtime)
+        if: ${{ steps.gate.outputs.deploy == 'true' }}
         shell: bash
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
