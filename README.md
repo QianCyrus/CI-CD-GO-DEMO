@@ -145,6 +145,7 @@ git push -u origin dev
    - 连续 push 两次很小的改动，去 Actions 看日志：第二次会出现 cache hit（npm/go/docker layer cache）
 
 3) **展示 CD（不用服务器也能演示）**
+   - 先在仓库 `Settings -> Pages` 把 Source 设为 `GitHub Actions`
    - 合并到 `main` 且只改 `frontend/**`：会自动跑 `deploy-frontend-pages` 发布到 GitHub Pages（纯 GitHub 资源）
 
 4) **展示“真部署 + 零宕机 + 审批 + 回滚”（需要你准备服务器并配置 secrets）**
