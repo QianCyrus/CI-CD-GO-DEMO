@@ -16,7 +16,8 @@ permissions:
 
 jobs:
   rollback-dev:
-    if: ${{ inputs.target == 'dev' }}
+    # 兜底：没有配置服务器 secrets 时直接跳过（回滚本质是服务器操作）
+    if: ${{ inputs.target == 'dev' && secrets.SERVER_HOST != '' && secrets.SERVER_USER != '' && secrets.SERVER_SSH_KEY != '' && secrets.SERVER_KNOWN_HOSTS != '' }}
     runs-on: ubuntu-latest
     environment: dev
     env:
@@ -71,7 +72,8 @@ jobs:
           ssh ${ssh_opts} "${SERVER_USER}@${SERVER_HOST}" "${remote_cmd}"
 
   rollback-production:
-    if: ${{ inputs.target == 'production' }}
+    # 兜底：没有配置服务器 secrets 时直接跳过（回滚本质是服务器操作）
+    if: ${{ inputs.target == 'production' && secrets.SERVER_HOST != '' && secrets.SERVER_USER != '' && secrets.SERVER_SSH_KEY != '' && secrets.SERVER_KNOWN_HOSTS != '' }}
     runs-on: ubuntu-latest
     environment: production
     env:

@@ -20,6 +20,8 @@ permissions:
 
 jobs:
   deploy:
+    # 兜底：如果你还没在 Environment(production) 里配置服务器 secrets，就先跳过部署（避免一上来就红）
+    if: ${{ secrets.SERVER_HOST != '' && secrets.SERVER_USER != '' && secrets.SERVER_SSH_KEY != '' && secrets.SERVER_KNOWN_HOSTS != '' }}
     runs-on: ubuntu-latest
     environment: production
     env:
