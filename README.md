@@ -113,6 +113,18 @@ workflow 在 `on.push.paths`/`on.pull_request.paths` 上做了过滤：
 ## 你需要做的事（把 demo 真跑起来）
 
 1) 把本目录推到你自己的 GitHub 仓库（public/private 均可）
+
+### 推到 GitHub（最短命令）
+
+先在 GitHub 网页新建一个空仓库（不要勾选 “Add a README”）。
+
+然后在本地仓库根目录执行（把 `<REPO_URL>` 替换成你的仓库地址，SSH/HTTPS 都行）：
+
+```bash
+git remote add origin <REPO_URL>
+git push -u origin main
+git push -u origin dev
+```
 2) 在仓库 `Settings -> Environments` 创建 `dev` 与 `production`
 3) 为两个 environment 分别添加上面的 secrets
 4) 服务器准备：
@@ -123,3 +135,19 @@ workflow 在 `on.push.paths`/`on.pull_request.paths` 上做了过滤：
 
 > 小抄：`SERVER_KNOWN_HOSTS` 可以在本地执行 `ssh-keyscan -H <host>` 获取（把输出整段复制到 secret）。
 
+## 怎么“展示我会 CI/CD”（面试/汇报用最短剧本）
+
+1) **展示 monorepo paths 触发**
+   - 只改 `frontend/src/style.css`，提 PR：只会跑 `frontend-ci`
+   - 只改 `backend/internal/service/greeter.go`，提 PR：只会跑 `backend-ci`
+
+2) **展示缓存（速度优化）**
+   - 连续 push 两次很小的改动，去 Actions 看日志：第二次会出现 cache hit（npm/go/docker layer cache）
+
+3) **展示 CD（不用服务器也能演示）**
+   - 合并到 `main` 且只改 `frontend/**`：会自动跑 `deploy-frontend-pages` 发布到 GitHub Pages（纯 GitHub 资源）
+
+4) **展示“真部署 + 零宕机 + 审批 + 回滚”（需要你准备服务器并配置 secrets）**
+   - push 到 `dev`：跑 `deploy-dev`（蓝绿切流量）
+   - 合并到 `main`：跑 `deploy-production`（production environment 可配置 Required reviewers，需网页点 Approve）
+   - 出问题时：手动触发 `rollback`，一键回滚到上一个镜像
